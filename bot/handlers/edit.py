@@ -123,7 +123,7 @@ async def handle_save_today_volume(
     )
 
     # Перезаписываем объем в Google Sheets / локальный Excel
-    ok, msg = sheets_service.record_volumes([rep_item], today)
+    ok, msg = sheets_service.record_volumes([rep_item], today, overwrite=True)
     await state.clear()
 
     if ok:

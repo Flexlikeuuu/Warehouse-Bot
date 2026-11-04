@@ -159,7 +159,12 @@ class GoogleSheetsService:
         ws.update_cell(4, new_col_idx, "объем")
         return new_col_idx
 
-    def record_volumes(self, items: List[ReportItem], date_target: Optional[datetime.date] = None) -> Tuple[bool, str]:
+    def record_volumes(
+        self, 
+        items: List[ReportItem], 
+        date_target: Optional[datetime.date] = None,
+        overwrite: bool = False
+    ) -> Tuple[bool, str]:
         target_date = date_target or datetime.date.today()
 
         # Вариант 1: Через Google Apps Script Webhook (если настроен)
@@ -167,6 +172,7 @@ class GoogleSheetsService:
             try:
                 payload = {
                     "date": target_date.strftime("%d.%m.%Y"),
+                    "overwrite": overwrite,
                     "items": [
                         {
                             "row_idx": it.position.row_idx,
@@ -177,6 +183,8 @@ class GoogleSheetsService:
                 }
                 resp = requests.post(self.apps_script_url, json=payload, timeout=10)
                 if resp.status_code == 200:
+                    # Зеркалируем запись в локальный файл для быстрого чтения /today
+                    self.record_volumes_local_excel(items, target_date, overwrite=overwrite)
                     return True, "Успешно записано в Google Sheets через Webhook"
             except Exception as e:
                 logger.warning(f"Ошибка Apps Script Webhook: {e}")
@@ -187,13 +195,22 @@ class GoogleSheetsService:
             try:
                 col_idx = self.get_or_create_date_column(target_date)
                 for item in items:
+                    cur_val = ws.cell(item.position.row_idx, col_idx).value
+                    if not overwrite and cur_val:
+                        try:
+                            clean_cur = float(str(cur_val).replace(",", "."))
+                            ws.update_cell(item.position.row_idx, col_idx, clean_cur + item.volume)
+                            continue
+                        except ValueError:
+                            pass
                     ws.update_cell(item.position.row_idx, col_idx, item.volume)
+                self.record_volumes_local_excel(items, target_date, overwrite=overwrite)
                 return True, f"Успешно записано в Google Sheets (столбец {col_idx})"
             except Exception as e:
                 logger.error(f"Ошибка записи gspread: {e}")
 
         # Вариант 3: Резервная запись в локальный Excel
-        return self.record_volumes_local_excel(items, target_date)
+        return self.record_volumes_local_excel(items, target_date, overwrite=overwrite)
 
     def get_today_entries(self, date_target: Optional[datetime.date] = None) -> List[Dict[str, Any]]:
         target_date = date_target or datetime.date.today()
@@ -219,7 +236,12 @@ class GoogleSheetsService:
 
         return self.get_today_entries_local_excel(target_date)
 
-    def record_volumes_local_excel(self, items: List[ReportItem], date_target: datetime.date) -> Tuple[bool, str]:
+    def record_volumes_local_excel(
+        self, 
+        items: List[ReportItem], 
+        date_target: datetime.date,
+        overwrite: bool = False
+    ) -> Tuple[bool, str]:
         file_path = settings.LOCAL_EXCEL_PATH
         if not os.path.exists(file_path):
             return False, f"Файл {file_path} не найден"
@@ -227,19 +249,24 @@ class GoogleSheetsService:
         try:
             wb = openpyxl.load_workbook(file_path)
             ws = wb.active
-            target_str = date_target.strftime("%Y-%m-%d")
+            target_str_dash = date_target.strftime("%Y-%m-%d")
+            target_str_dot = date_target.strftime("%d.%m.%Y")
+            target_str_short = date_target.strftime("%d.%m")
+            target_str_us = f"{date_target.month}/{date_target.day}/{date_target.year}"
             col_idx = None
 
             for c in range(10, ws.max_column + 1):
                 cell_val = ws.cell(3, c).value
-                if cell_val:
+                if cell_val is not None:
                     if isinstance(cell_val, (datetime.datetime, datetime.date)):
-                        if cell_val.strftime("%Y-%m-%d") == target_str:
+                        if cell_val.strftime("%Y-%m-%d") == target_str_dash:
                             col_idx = c
                             break
-                    elif target_str in str(cell_val) or date_target.strftime("%d.%m") in str(cell_val):
-                        col_idx = c
-                        break
+                    else:
+                        s_val = str(cell_val).strip()
+                        if any(fmt in s_val for fmt in [target_str_dash, target_str_dot, target_str_short, target_str_us]):
+                            col_idx = c
+                            break
 
             if col_idx is None:
                 col_idx = max(ws.max_column + 1, 10)
@@ -248,7 +275,12 @@ class GoogleSheetsService:
                 ws.cell(4, col_idx).value = "объем"
 
             for it in items:
-                ws.cell(it.position.row_idx, col_idx).value = it.volume
+                cell = ws.cell(it.position.row_idx, col_idx)
+                cur_val = cell.value
+                if not overwrite and cur_val is not None and isinstance(cur_val, (int, float)) and cur_val > 0:
+                    cell.value = float(cur_val) + it.volume
+                else:
+                    cell.value = it.volume
 
             wb.save(file_path)
             return True, f"Записано в локальную таблицу (столбец {col_idx})"

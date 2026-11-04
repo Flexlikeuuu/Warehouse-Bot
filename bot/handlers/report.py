@@ -2,6 +2,7 @@ import datetime
 import logging
 from typing import List, Dict, Any
 from aiogram import Router, F, Bot
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
@@ -87,7 +88,11 @@ async def handle_voice_report(
         await status_msg.edit_text(f"❌ Ошибка распознавания речи: {e}\nПожалуйста, отправьте отчёт текстом.")
 
 
-@report_router.message(F.text, ~F.text.startswith("/"))
+@report_router.message(
+    StateFilter(None, ReportStates.confirming_report),
+    F.text, 
+    ~F.text.startswith("/")
+)
 async def handle_text_report(
     message: Message, 
     state: FSMContext,
