@@ -102,3 +102,4 @@ function doGet(e) {
     message: "Google Apps Script Webhook активен и готов к работе"
   })).setMimeType(ContentService.MimeType.JSON);
 }
+
