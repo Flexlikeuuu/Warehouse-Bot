@@ -1,0 +1,37 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Environment variables & Secrets (CRITICAL)
+.env
+*.env.local
+service_account.json
+credentials.json
+*.key
+*.pem
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary and test files
+test_temp_*.xlsx
+temp/
+tmp/
+*.log
+*.pdf
+
+# OS generated files
+.DS_Store
+Thumbs.db
